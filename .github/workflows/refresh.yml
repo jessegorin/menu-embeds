@@ -1,0 +1,42 @@
+name: Refresh menu embeds
+
+# Regenerates every store bundle in stores.json so the embedded menus stay
+# current (prices, items, hours, modifiers). No secrets needed — the generator
+# pulls a fresh token from each public store page on every run.
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # 08:00 UTC nightly (~3-4am US Eastern)
+  workflow_dispatch: {}    # allow manual "Run workflow" from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Regenerate all store bundles
+        run: python3 generate.py --all
+
+      - name: Commit changes if any
+        run: |
+          git config user.name  "menu-embeds-bot"
+          git config user.email "actions@github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "chore: nightly menu refresh"
+            git push
+          else
+            echo "No menu changes."
+          fi
