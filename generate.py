@@ -232,6 +232,22 @@ def format_upcharge(cents):
     return f"+${cents / 100:.2f}"
 
 
+def readable_on(hex_color):
+    """Return black or white — whichever is readable on the given hex color."""
+    try:
+        h = hex_color.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+        # relative luminance (sRGB, simple linearization)
+        def lin(c):
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+        lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+        return "#1a1a1a" if lum > 0.5 else "#ffffff"
+    except Exception:
+        return "#ffffff"
+
+
 def extract_modifiers(product):
     """Flatten a product's option_groups into display-ready modifier groups."""
     groups = []
@@ -346,6 +362,7 @@ def build_data(store, sections, colors, logo_url, store_url):
             })
         if items:
             out_sections.append({"name": section.get("name", ""), "items": items})
+    colors = {**colors, "on_accent": readable_on(colors.get("accent", "#111"))}
     return {
         "store": {
             "name": store["name"], "address": store["address"],
@@ -371,23 +388,37 @@ function chowlyRenderMenu(DATA, mountId) {
 
   var c = DATA.colors || {};
   var accent = c.accent || "#111";
+  var onAccent = c.on_accent || "#fff";
   var textDark = c.text_dark || "#1a1a1a";
   var sectionBg = c.section_bg || "#f6f6f6";
 
   var css = "\n" +
+    ":host { display:block; width:100%; }\n" +
     ":host, * { box-sizing: border-box; }\n" +
     ".cm { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;" +
-      " color:" + textDark + "; --accent:" + accent + "; --sec:" + sectionBg + "; line-height:1.5; }\n" +
-    ".cm-head { text-align:center; padding:8px 12px 20px; }\n" +
+      " color:" + textDark + "; --accent:" + accent + "; --on-accent:" + onAccent + "; --sec:" + sectionBg + ";" +
+      " width:100%; line-height:1.5; }\n" +
+    ".cm-head { text-align:center; padding:8px 12px 16px; }\n" +
     ".cm-logo { max-width:180px; max-height:80px; object-fit:contain; margin:0 auto 10px; display:block; }\n" +
     ".cm-name { font-size:1.7rem; font-weight:800; letter-spacing:-.01em; margin:0 0 4px; color:var(--accent); }\n" +
     ".cm-meta { font-size:.82rem; color:#6b6b6b; display:flex; gap:6px 18px; flex-wrap:wrap; justify-content:center; }\n" +
     ".cm-hours { font-size:.78rem; color:#7a7a7a; margin-top:6px; }\n" +
-    ".cm-section { margin:26px 0 8px; }\n" +
-    ".cm-sec-title { font-size:.72rem; font-weight:800; letter-spacing:.14em; text-transform:uppercase;" +
-      " color:var(--accent); display:flex; align-items:center; gap:12px; margin:0 4px 14px; }\n" +
-    ".cm-sec-title::after { content:''; flex:1; height:1px; background:rgba(0,0,0,.1); }\n" +
-    ".cm-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }\n" +
+    /* horizontal scrolling category nav */
+    ".cm-nav { display:flex; gap:8px; overflow-x:auto; overflow-y:hidden; padding:10px 2px;" +
+      " position:sticky; top:0; z-index:5; background:rgba(255,255,255,.96);" +
+      " backdrop-filter:saturate(160%) blur(6px); -webkit-backdrop-filter:saturate(160%) blur(6px);" +
+      " border-bottom:1px solid rgba(0,0,0,.08); scroll-behavior:smooth; -webkit-overflow-scrolling:touch; }\n" +
+    ".cm-nav::-webkit-scrollbar { height:6px; }\n" +
+    ".cm-nav::-webkit-scrollbar-thumb { background:rgba(0,0,0,.18); border-radius:3px; }\n" +
+    ".cm-nav { scrollbar-width:thin; }\n" +
+    ".cm-tab { flex:0 0 auto; white-space:nowrap; padding:8px 16px; border-radius:999px;" +
+      " border:1px solid rgba(0,0,0,.15); background:#fff; font:inherit; font-size:.82rem; font-weight:700;" +
+      " color:#555; cursor:pointer; transition:background .15s,color .15s,border-color .15s; }\n" +
+    ".cm-tab:hover { border-color:var(--accent); color:var(--accent); }\n" +
+    ".cm-tab.cm-active { background:var(--accent); color:var(--on-accent); border-color:var(--accent); }\n" +
+    ".cm-panel { display:none; padding-top:20px; }\n" +
+    ".cm-panel.cm-active { display:block; }\n" +
+    ".cm-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; }\n" +
     ".cm-item { background:#fff; border:1px solid rgba(0,0,0,.08); border-radius:12px; overflow:hidden;" +
       " display:flex; flex-direction:column; transition:box-shadow .15s ease,transform .15s ease; }\n" +
     ".cm-item:hover { box-shadow:0 6px 22px rgba(0,0,0,.09); transform:translateY(-1px); }\n" +
@@ -416,11 +447,35 @@ function chowlyRenderMenu(DATA, mountId) {
     ".cm-up { color:var(--accent); font-weight:700; font-variant-numeric:tabular-nums; }\n" +
     ".cm-footer { text-align:center; font-size:.72rem; color:#aaa; margin:28px 0 6px; }\n" +
     ".cm-footer a { color:inherit; }\n" +
-    "@media (max-width:520px){ .cm-grid{ grid-template-columns:1fr; } }\n";
+    "@media (max-width:520px){ .cm-grid{ grid-template-columns:1fr; } .cm-name{ font-size:1.4rem; } }\n";
 
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function itemCard(it) {
+    var h = "<article class='cm-item'>";
+    if (it.img) h += "<img class='cm-img' loading='lazy' src='" + esc(it.img) + "' alt='" + esc(it.name) + "'>";
+    h += "<div class='cm-body'><div class='cm-row'><h3 class='cm-iname'>" + esc(it.name) + "</h3>";
+    if (it.price) h += "<span class='cm-price'>" + esc(it.price) + "</span>";
+    h += "</div>";
+    if (it.desc) h += "<p class='cm-desc'>" + esc(it.desc) + "</p>";
+    if (it.mods && it.mods.length) {
+      h += "<button class='cm-optbtn' type='button' aria-expanded='false'>" +
+        "<span class='cm-caret'>&#9656;</span>Options</button><div class='cm-opts'>";
+      it.mods.forEach(function (g) {
+        h += "<div class='cm-grp'><span class='cm-glabel'>" + esc(g.label) + "</span>" +
+          "<span class='cm-grule'>" + esc(g.rule) + "</span><ul class='cm-choices'>";
+        g.choices.forEach(function (ch) {
+          h += "<li class='cm-choice'><span>" + esc(ch.name) + "</span>" +
+            (ch.up ? "<span class='cm-up'>" + esc(ch.up) + "</span>" : "") + "</li>";
+        });
+        h += "</ul></div>";
+      });
+      h += "</div>";
+    }
+    return h + "</div></article>";
   }
 
   var html = "<style>" + css + "</style><div class='cm'>";
@@ -428,8 +483,7 @@ function chowlyRenderMenu(DATA, mountId) {
   // Header
   html += "<div class='cm-head'>";
   if (DATA.logo) html += "<img class='cm-logo' src='" + esc(DATA.logo) + "' alt='" + esc(DATA.store.name) + " logo'>";
-  html += "<h2 class='cm-name'>" + esc(DATA.store.name) + "</h2>";
-  html += "<div class='cm-meta'>";
+  html += "<h2 class='cm-name'>" + esc(DATA.store.name) + "</h2><div class='cm-meta'>";
   if (DATA.store.address) html += "<span>" + esc(DATA.store.address) + "</span>";
   if (DATA.store.phone) html += "<span>" + esc(DATA.store.phone) + "</span>";
   html += "</div>";
@@ -437,50 +491,54 @@ function chowlyRenderMenu(DATA, mountId) {
     html += "<div class='cm-hours'>" + DATA.store.hours.map(esc).join(" &nbsp;·&nbsp; ") + "</div>";
   html += "</div>";
 
-  // Sections
-  DATA.sections.forEach(function (sec) {
-    html += "<section class='cm-section'><div class='cm-sec-title'>" + esc(sec.name) + "</div><div class='cm-grid'>";
-    sec.items.forEach(function (it) {
-      html += "<article class='cm-item'>";
-      if (it.img) html += "<img class='cm-img' loading='lazy' src='" + esc(it.img) + "' alt='" + esc(it.name) + "'>";
-      html += "<div class='cm-body'><div class='cm-row'><h3 class='cm-iname'>" + esc(it.name) + "</h3>";
-      if (it.price) html += "<span class='cm-price'>" + esc(it.price) + "</span>";
-      html += "</div>";
-      if (it.desc) html += "<p class='cm-desc'>" + esc(it.desc) + "</p>";
-      if (it.mods && it.mods.length) {
-        html += "<button class='cm-optbtn' type='button' aria-expanded='false'>" +
-          "<span class='cm-caret'>&#9656;</span>Options</button>";
-        html += "<div class='cm-opts'>";
-        it.mods.forEach(function (g) {
-          html += "<div class='cm-grp'><span class='cm-glabel'>" + esc(g.label) + "</span>" +
-            "<span class='cm-grule'>" + esc(g.rule) + "</span><ul class='cm-choices'>";
-          g.choices.forEach(function (ch) {
-            html += "<li class='cm-choice'><span>" + esc(ch.name) + "</span>" +
-              (ch.up ? "<span class='cm-up'>" + esc(ch.up) + "</span>" : "") + "</li>";
-          });
-          html += "</ul></div>";
-        });
-        html += "</div>";
-      }
-      html += "</div></article>";
-    });
+  // Category nav (horizontal scroll) — one tab per section
+  html += "<nav class='cm-nav' role='tablist' aria-label='Menu categories'>";
+  DATA.sections.forEach(function (sec, i) {
+    html += "<button class='cm-tab" + (i === 0 ? " cm-active" : "") + "' role='tab' type='button'" +
+      " data-i='" + i + "' aria-selected='" + (i === 0) + "'>" + esc(sec.name) + "</button>";
+  });
+  html += "</nav>";
+
+  // One panel per section; only the active one is shown
+  DATA.sections.forEach(function (sec, i) {
+    html += "<section class='cm-panel" + (i === 0 ? " cm-active" : "") + "' role='tabpanel' data-i='" + i + "'>" +
+      "<div class='cm-grid'>";
+    sec.items.forEach(function (it) { html += itemCard(it); });
     html += "</div></section>";
   });
 
-  var year = new Date().getFullYear();
   html += "<div class='cm-footer'>Menu powered by Chowly";
   if (DATA.store.url) html += " · <a href='" + esc(DATA.store.url) + "' target='_blank' rel='noopener'>Order online</a>";
   html += "</div></div>";
 
   root.innerHTML = html;
 
-  // Collapsible options (event delegation)
+  var nav = root.querySelector(".cm-nav");
+  function selectCategory(i) {
+    root.querySelectorAll(".cm-tab").forEach(function (t) {
+      var on = t.getAttribute("data-i") === String(i);
+      t.classList.toggle("cm-active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    root.querySelectorAll(".cm-panel").forEach(function (p) {
+      p.classList.toggle("cm-active", p.getAttribute("data-i") === String(i));
+    });
+  }
+
   root.addEventListener("click", function (e) {
+    var tab = e.target.closest && e.target.closest(".cm-tab");
+    if (tab) {
+      selectCategory(tab.getAttribute("data-i"));
+      // keep the chosen tab visible in the horizontal bar
+      if (tab.scrollIntoView) tab.scrollIntoView({ inline: "center", block: "nearest" });
+      return;
+    }
     var btn = e.target.closest && e.target.closest(".cm-optbtn");
-    if (!btn) return;
-    var opts = btn.parentNode.querySelector(".cm-opts");
-    var open = opts.classList.toggle("cm-open");
-    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (btn) {
+      var opts = btn.parentNode.querySelector(".cm-opts");
+      var open = opts.classList.toggle("cm-open");
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
   });
 }
 """
