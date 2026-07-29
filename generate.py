@@ -33,6 +33,7 @@ import urllib.parse
 import urllib.request
 import zlib
 from datetime import datetime, timedelta, timezone
+from html import escape as esc
 from pathlib import Path
 
 # Repo root = parent of this script's directory (script lives at <repo>/generate.py
@@ -594,51 +595,307 @@ def store_id_from_url(url):
     return m.group(1) if m else re.sub(r"\W+", "", url)[-8:]
 
 
-def rebuild_index(reg):
-    """Write docs/index.html — a preview gallery of every embedded store."""
-    cards = []
-    for s in sorted(reg, key=lambda x: x.get("name", x["id"]).lower()):
-        sid = s["id"]
-        cards.append(f"""    <article class="card">
-      <div class="card-head">
-        <h2>{s.get('name', sid)}</h2>
-        <code>menu-{sid}.js</code>
-      </div>
-      <div class="snippet"><pre>&lt;div id="chowly-menu"&gt;&lt;/div&gt;
-&lt;script src="{PAGES_BASE}/menu-{sid}.js"&gt;&lt;/script&gt;</pre></div>
-      <div class="preview"><div id="chowly-menu"></div>
-        <script src="./menu-{sid}.js"></script></div>
-    </article>""")
-    # NOTE: multiple bundles on one page all mount into #chowly-menu; the preview
-    # below only reliably renders the first. It's a convenience gallery, not a
-    # multi-embed demo — each customer site embeds exactly one.
-    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    html = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
+# Shared page chrome. Plain (non-f) strings so CSS/JS braces stay literal.
+SHELL_CSS = """
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  :root {
+    --navy: #001f52;
+    --brand-blue: #1B51A4;
+    --accent-blue: #3B82F6;
+    --sky: #38bdf8;
+    --heading-navy: #0a2540;
+    --text-body: #3b4563;
+    --text-muted: #6b7a99;
+    --text-subtle: #8b95ad;
+    --surface: #ffffff;
+    --surface-raised: #f8f9fc;
+    --border: #e2e8f0;
+    --border-subtle: #eef2f7;
+    --font-head: Lato, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --font-body: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    color-scheme: light;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background: linear-gradient(180deg, #ffffff 0%, #f8f9fc 38%, #f0f3fa 100%);
+    color: var(--text-body);
+    line-height: 1.6;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2 { font-family: var(--font-head); margin: 0; text-wrap: balance; }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding-inline: 24px; }
+
+  .masthead {
+    background: linear-gradient(150deg, #020817 0%, #001131 38%, #001f52 72%, #0c2d6b 100%);
+    padding: 26px 0 46px;
+    color: #fff;
+  }
+  .crumbs { margin-bottom: 26px; }
+  .crumbs a {
+    color: rgba(255,255,255,.72); text-decoration: none;
+    font-size: 13px; font-weight: 600;
+  }
+  .crumbs a:hover { color: #fff; }
+  .crumbs a:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 3px; }
+
+  .eyebrow {
+    margin: 0 0 12px; font-size: 11px; font-weight: 800;
+    letter-spacing: 1.6px; text-transform: uppercase; color: var(--sky);
+  }
+  .masthead h1 {
+    font-size: 2.1rem; font-weight: 900; line-height: 1.1;
+    letter-spacing: -0.02em; color: #fff;
+  }
+  .lede { margin: 12px 0 0; color: rgba(255,255,255,.68); font-size: 14.5px; }
+
+  main { padding-bottom: 60px; }
+
+  /* ---------- index list ---------- */
+  .list { list-style: none; padding: 0; margin: -26px 0 0; display: flex; flex-direction: column; gap: 12px; }
+  a.row {
+    display: flex; align-items: center; justify-content: space-between; gap: 18px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 20px 22px; text-decoration: none;
+    box-shadow: 0 6px 20px rgba(0,0,0,.06);
+    transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  }
+  a.row:hover { transform: translateY(-2px); border-color: var(--brand-blue); box-shadow: 0 14px 38px rgba(0,0,0,.10); }
+  a.row:focus-visible { outline: 3px solid var(--brand-blue); outline-offset: 3px; }
+  .row .name { display: block; font-family: var(--font-head); font-weight: 700; font-size: 1.05rem; color: var(--heading-navy); }
+  .row .file { display: block; font-size: 12.5px; color: var(--text-subtle); margin-top: 3px; }
+  .row .go { flex: 0 0 auto; font-size: 13.5px; font-weight: 600; color: var(--brand-blue); white-space: nowrap; }
+  .empty { margin-top: -26px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+
+  /* ---------- store page ---------- */
+  .panel {
+    margin-top: 20px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 26px 26px 28px;
+  }
+  .panel:first-of-type { margin-top: -26px; box-shadow: 0 6px 20px rgba(0,0,0,.06); }
+  .panel h2 { font-size: 1.15rem; font-weight: 700; color: var(--heading-navy); margin-bottom: 6px; }
+  .hint { font-size: 13.5px; color: var(--text-muted); margin: 0 0 14px; }
+  .hint code { background: var(--surface-raised); border: 1px solid var(--border-subtle); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+
+  .snip { position: relative; margin-bottom: 18px; }
+  .snip pre {
+    margin: 0; background: #0a1428; color: #e6ecf7; padding: 16px 84px 16px 16px;
+    border-radius: 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.65;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .copy {
+    position: absolute; top: 10px; right: 10px;
+    background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2);
+    border-radius: 8px; padding: 5px 12px; font: 600 12px var(--font-body);
+    cursor: pointer; transition: background 150ms ease;
+  }
+  .copy:hover { background: rgba(255,255,255,.18); }
+  .copy:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .copy.done { background: #2e7d32; border-color: #2e7d32; }
+
+  .preview-frame { border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; }
+  .srcline { margin: 22px 0 0; font-size: 13px; color: var(--text-muted); }
+  .srcline a { color: var(--brand-blue); font-weight: 600; text-decoration: none; }
+  .srcline a:hover { text-decoration: underline; }
+
+  @media (max-width: 560px) {
+    .masthead h1 { font-size: 1.7rem; }
+    a.row { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .panel { padding: 20px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    a.row { transition: none; }
+    a.row:hover { transform: none; }
+  }
+"""
+
+COPY_JS = """
+document.querySelectorAll('.copy').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var pre = document.getElementById(btn.getAttribute('data-copy'));
+    if (!pre) return;
+    var done = function () {
+      var prev = btn.textContent;
+      btn.textContent = 'Copied';
+      btn.classList.add('done');
+      setTimeout(function () { btn.textContent = prev; btn.classList.remove('done'); }, 1600);
+    };
+    var fallback = function () {
+      var range = document.createRange();
+      range.selectNodeContents(pre);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(pre.innerText).then(done, fallback);
+    } else {
+      fallback();
+    }
+  });
+});
+"""
+
+
+def _document(title, body, extra_script=""):
+    """Standard document shell shared by the index and every store page."""
+    tail = f"\n<script>{extra_script}</script>" if extra_script else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Chowly Menu Embeds</title>
-<style>
-  body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    max-width:900px; margin:0 auto; padding:40px 20px; color:#1a1a1a; }}
-  h1 {{ font-size:1.8rem; }}
-  .sub {{ color:#666; margin-bottom:32px; }}
-  .card {{ border:1px solid #e3e3e3; border-radius:12px; padding:20px; margin-bottom:24px; }}
-  .card-head {{ display:flex; justify-content:space-between; align-items:center; gap:12px; }}
-  .card-head h2 {{ font-size:1.15rem; margin:0; }}
-  code {{ background:#f2f2f2; padding:2px 7px; border-radius:5px; font-size:.8rem; }}
-  .snippet pre {{ background:#1a1a1a; color:#e6e6e6; padding:12px 14px; border-radius:8px;
-    overflow-x:auto; font-size:.8rem; }}
-  .preview {{ margin-top:14px; border-top:1px dashed #ddd; padding-top:14px; }}
-</style></head>
+<title>{title}</title>
+<style>{SHELL_CSS}</style>
+</head>
 <body>
-  <h1>Chowly Menu Embeds</h1>
-  <p class="sub">Copy-paste loaders that render a live-styled menu into any website.
-    Auto-refreshed nightly. Last built {generated}.</p>
-{chr(10).join(cards) if cards else '  <p>No stores registered yet.</p>'}
-</body></html>
+{body}{tail}
+</body>
+</html>
 """
-    (DOCS_DIR / "index.html").write_text(html, encoding="utf-8")
+
+
+def _snippet(sid, target=None):
+    """The escaped copy-paste snippet for a store, as it should render in a <pre>."""
+    div_id = target or "chowly-menu"
+    attr = f' data-target="{esc(target)}"' if target else ""
+    return (f'&lt;div id="{esc(div_id)}"&gt;&lt;/div&gt;\n'
+            f'&lt;script src="{PAGES_BASE}/menu-{sid}.js"{attr}&gt;&lt;/script&gt;')
+
+
+def write_store_page(s, generated):
+    """Write docs/<id>/index.html — one loader, its snippet, and a live preview."""
+    sid = s["id"]
+    name = esc(s.get("name", sid))
+    store_url = s.get("url", "")
+    out_dir = DOCS_DIR / sid
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    source_link = (f'<a href="{esc(store_url)}" rel="noreferrer">Source store &#8599;</a> &middot; '
+                   if store_url else "")
+
+    body = f"""<header class="masthead">
+  <div class="wrap">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="../">&larr; All menu embeds</a></nav>
+    <p class="eyebrow">Menu embed</p>
+    <h1>{name}</h1>
+    <p class="lede">Store {sid} &middot; rebuilt nightly &middot; last built {generated}</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="panel">
+    <h2>Paste this into the site</h2>
+    <p class="hint">The menu renders wherever the div sits. Nothing else to install.</p>
+    <div class="snip">
+      <button class="copy" type="button" data-copy="snip-default">Copy</button>
+      <pre id="snip-default">{_snippet(sid)}</pre>
+    </div>
+    <p class="hint">To mount it somewhere else on the page, point <code>data-target</code> at your own element:</p>
+    <div class="snip">
+      <button class="copy" type="button" data-copy="snip-target">Copy</button>
+      <pre id="snip-target">{_snippet(sid, target="my-menu")}</pre>
+    </div>
+    <p class="srcline">{source_link}<a href="../menu-{sid}.js">View the loader &#8599;</a></p>
+  </section>
+
+  <section class="panel">
+    <h2>Live preview</h2>
+    <p class="hint">Exactly what the snippet renders. Refreshes with tonight's rebuild.</p>
+    <div class="preview-frame">
+      <div id="chowly-menu"></div>
+      <script src="../menu-{sid}.js"></script>
+    </div>
+  </section>
+
+</main>"""
+
+    (out_dir / "index.html").write_text(
+        _document(f"{name} — menu embed", body, extra_script=COPY_JS),
+        encoding="utf-8",
+    )
+
+
+def prune_orphan_pages(live_ids):
+    """Delete store-page directories for stores no longer in the registry.
+
+    Drop a store from stores.json and its page must stop being served — a
+    churned customer's menu should not sit at a public URL indefinitely.
+
+    Deliberately narrow: only removes a directory whose name is all digits
+    (a store id) and whose sole contents are the index.html we generate.
+    Anything else is left alone rather than guessed at. Bundles
+    (docs/menu-<id>.js) are NOT touched — sites may still be loading them,
+    and pulling one would blank a live customer's menu without warning.
+    """
+    if not DOCS_DIR.exists():
+        return
+    for child in sorted(DOCS_DIR.iterdir()):
+        if not child.is_dir() or not child.name.isdigit() or child.name in live_ids:
+            continue
+        contents = {p.name for p in child.iterdir()}
+        if contents and contents != {"index.html"}:
+            print(f"[prune] SKIPPED {child} — unexpected contents: {sorted(contents)}")
+            continue
+        for p in child.iterdir():
+            p.unlink()
+        child.rmdir()
+        print(f"[prune] removed stale store page {child}")
+
+
+def rebuild_index(reg):
+    """Write docs/index.html plus one page per registered loader.
+
+    Each store gets its own page so its preview actually renders — every bundle
+    mounts into #chowly-menu, so the old single-page gallery could only ever
+    show the first store's menu.
+    """
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    stores = sorted(reg, key=lambda x: x.get("name", x["id"]).lower())
+
+    rows = []
+    for s in stores:
+        sid = s["id"]
+        rows.append(f"""    <li><a class="row" href="./{sid}/">
+      <span>
+        <span class="name">{esc(s.get('name', sid))}</span>
+        <span class="file">menu-{sid}.js &middot; store {sid}</span>
+      </span>
+      <span class="go">Get the snippet &rarr;</span>
+    </a></li>""")
+        write_store_page(s, generated)
+
+    prune_orphan_pages({s["id"] for s in stores})
+
+    count = len(stores)
+    listing = ("  <ul class=\"list\">\n" + "\n".join(rows) + "\n  </ul>") if rows else \
+              '  <p class="empty">No stores registered yet. Run <code>generate.py &lt;store-url&gt;</code> to add one.</p>'
+
+    body = f"""<header class="masthead">
+  <div class="wrap">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="https://jessegorin.github.io/">&larr; All work</a></nav>
+    <p class="eyebrow">Chowly Online Ordering</p>
+    <h1>Menu embeds</h1>
+    <p class="lede">Copy-paste loaders that render a live menu into any website.
+      {count} loader{'' if count == 1 else 's'} &middot; rebuilt nightly &middot; last built {generated}</p>
+  </div>
+</header>
+
+<main class="wrap">
+{listing}
+</main>"""
+
+    (DOCS_DIR / "index.html").write_text(
+        _document("Chowly menu embeds", body), encoding="utf-8"
+    )
 
 
 # ---------------------------------------------------------------------------
