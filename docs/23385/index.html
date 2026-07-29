@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Chowly menu embeds</title>
+<title>Portobanco&#x27;s Restaurant — menu embed</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -127,31 +127,67 @@
 <body>
 <header class="masthead">
   <div class="wrap">
-    <nav class="crumbs" aria-label="Breadcrumb"><a href="https://jessegorin.github.io/">&larr; All work</a></nav>
-    <p class="eyebrow">Chowly Online Ordering</p>
-    <h1>Menu embeds</h1>
-    <p class="lede">Copy-paste loaders that render a live menu into any website.
-      2 loaders &middot; rebuilt nightly &middot; last built 2026-07-29 17:48 UTC</p>
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="../">&larr; All menu embeds</a></nav>
+    <p class="eyebrow">Menu embed</p>
+    <h1>Portobanco&#x27;s Restaurant</h1>
+    <p class="lede">Store 23385 &middot; rebuilt nightly &middot; last built 2026-07-29 17:48 UTC</p>
   </div>
 </header>
 
 <main class="wrap">
-  <ul class="list">
-    <li><a class="row" href="./23385/">
-      <span>
-        <span class="name">Portobanco&#x27;s Restaurant</span>
-        <span class="file">menu-23385.js &middot; store 23385</span>
-      </span>
-      <span class="go">Get the snippet &rarr;</span>
-    </a></li>
-    <li><a class="row" href="./21411/">
-      <span>
-        <span class="name">Smashville Hot Chicken &amp; Burgers</span>
-        <span class="file">menu-21411.js &middot; store 21411</span>
-      </span>
-      <span class="go">Get the snippet &rarr;</span>
-    </a></li>
-  </ul>
+
+  <section class="panel">
+    <h2>Paste this into the site</h2>
+    <p class="hint">The menu renders wherever the div sits. Nothing else to install.</p>
+    <div class="snip">
+      <button class="copy" type="button" data-copy="snip-default">Copy</button>
+      <pre id="snip-default">&lt;div id="chowly-menu"&gt;&lt;/div&gt;
+&lt;script src="https://jessegorin.github.io/menu-embeds/menu-23385.js"&gt;&lt;/script&gt;</pre>
+    </div>
+    <p class="hint">To mount it somewhere else on the page, point <code>data-target</code> at your own element:</p>
+    <div class="snip">
+      <button class="copy" type="button" data-copy="snip-target">Copy</button>
+      <pre id="snip-target">&lt;div id="my-menu"&gt;&lt;/div&gt;
+&lt;script src="https://jessegorin.github.io/menu-embeds/menu-23385.js" data-target="my-menu"&gt;&lt;/script&gt;</pre>
+    </div>
+    <p class="srcline"><a href="https://portobancos-restaurant-968cf1f8.sites.chowly.app/store/23385" rel="noreferrer">Source store &#8599;</a> &middot; <a href="../menu-23385.js">View the loader &#8599;</a></p>
+  </section>
+
+  <section class="panel">
+    <h2>Live preview</h2>
+    <p class="hint">Exactly what the snippet renders. Refreshes with tonight's rebuild.</p>
+    <div class="preview-frame">
+      <div id="chowly-menu"></div>
+      <script src="../menu-23385.js"></script>
+    </div>
+  </section>
+
 </main>
+<script>
+document.querySelectorAll('.copy').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var pre = document.getElementById(btn.getAttribute('data-copy'));
+    if (!pre) return;
+    var done = function () {
+      var prev = btn.textContent;
+      btn.textContent = 'Copied';
+      btn.classList.add('done');
+      setTimeout(function () { btn.textContent = prev; btn.classList.remove('done'); }, 1600);
+    };
+    var fallback = function () {
+      var range = document.createRange();
+      range.selectNodeContents(pre);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(pre.innerText).then(done, fallback);
+    } else {
+      fallback();
+    }
+  });
+});
+</script>
 </body>
 </html>
