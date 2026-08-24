@@ -1,4 +1,4 @@
-/*! Chowly menu embed — store 23385 — generated 2026-08-23
+/*! Chowly menu embed — store 23385 — generated 2026-08-24
  * Paste onto any site:
  *   <div id="chowly-menu"></div>
  *   <script src="https://jessegorin.github.io/menu-embeds/menu-23385.js"></script>
