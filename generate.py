@@ -288,7 +288,11 @@ def extract_menu(data):
     loc = app["locations"]["detail"]
     token = app.get("global", {}).get("token", {}).get("access_token", "")
 
-    queries = data["props"]["pageProps"]["initialProps"]["props"]["serverState"]["queries"]
+    # COO ships two __NEXT_DATA__ shapes: older pages nest serverState under an
+    # extra "props" wrapper, newer ones hang it off initialProps directly.
+    ip = data["props"]["pageProps"]["initialProps"]
+    server_state = ip.get("serverState") or ip.get("props", {}).get("serverState", {})
+    queries = server_state.get("queries", [])
     sections = []
     for q in queries:
         if q["queryKey"][0] == "menu":
